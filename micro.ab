@@ -1,0 +1,219 @@
+import "abla/json"
+import "abla/html"
+import "abla/unsafe/memory"
+
+trusted noescape extern:"c" fun micro_platform_call(
+    request: int,
+    requestLength: int,
+    response: int,
+    responseCapacity: int
+): int
+
+class MicroHeader(val name: string, val value: string)
+
+class MicroHeaders(val encoded: string)
+
+class MicroAppUser(
+    val authenticated: bool,
+    val id: string,
+    val email: string,
+    val displayName: string,
+    val emailVerified: bool
+)
+
+class MicroRequestContext(
+    val projectId: string,
+    val environment: string,
+    val user: MicroAppUser
+)
+
+class MicroRequest(
+    val method: string,
+    val path: string,
+    val query: string,
+    val headers: MicroHeaders,
+    val body: string,
+    val context: MicroRequestContext
+)
+
+fun microAnonymousUser(): MicroAppUser = MicroAppUser(false, "", "", "", false)
+
+class MicroResponse(
+    val status: int,
+    val headers: array<MicroHeader>,
+    val body: string
+)
+
+class MicroPlatformResponse(
+    val succeeded: bool,
+    val body: string
+)
+
+// Request headers stay encoded until application code asks for them. Most
+// functions never inspect headers, so they should not pay to materialize every
+// pair into dynamic JSON objects on each invocation.
+fun MicroHeaders.all(): array<MicroHeader> {
+    val headers: array<MicroHeader> = []
+    val parsed = jsonParse(this.encoded)
+    var index = 0
+    while (parsed.succeeded && parsed.value.isArray() &&
+        index < parsed.value.size()) {
+        val pair = parsed.value.at(index)
+        if (pair.isArray() && pair.size() == 2 &&
+            pair.at(0).isString() && pair.at(1).isString()) {
+            headers.append(MicroHeader(
+                pair.at(0).asString(),
+                pair.at(1).asString()
+            ))
+        }
+        index = index + 1
+    }
+    headers
+}
+
+fun MicroHeaders.get(name: string): string {
+    val headers = this.all()
+    var result = ""
+    var index = 0
+    while (index < headers.size) {
+        if (headers[index].name == name) result = headers[index].value
+        index = index + 1
+    }
+    result
+}
+
+fun microTextResponse(status: int, body: string): MicroResponse =
+    MicroResponse(
+        status,
+        [MicroHeader("content-type", "text/plain; charset=utf-8")],
+        body
+    )
+
+// `$jsons` produces an already validated JSON string. Keeping the response
+// body textual means application handlers do not construct and stringify a
+// dynamic JSON tree for every request.
+fun microJsonResponse(status: int, body: string): MicroResponse =
+    MicroResponse(
+        status,
+        [MicroHeader("content-type", "application/json; charset=utf-8")],
+        body
+    )
+
+// `$html` deliberately produces a small tree instead of a trusted string.
+// Rendering escapes both literal and interpolated text, while element names
+// come only from the compile-time parser. This keeps authenticated values out
+// of raw markup by construction.
+fun microEscapeHtml(value: string): string {
+    var output = ""
+    var index = 0
+    while (index < value.size) {
+        val byte = value[index]
+        if (byte == 38) output = "${output}&amp;"
+        else if (byte == 60) output = "${output}&lt;"
+        else if (byte == 62) output = "${output}&gt;"
+        else if (byte == 34) output = "${output}&quot;"
+        else if (byte == 39) output = "${output}&#39;"
+        else output = "$output${value.slice(index, index + 1)}"
+        index = index + 1
+    }
+    output
+}
+
+fun Html.microRender(): string {
+    var output = ""
+    if (this.kind == 2) output = microEscapeHtml(this.text)
+    if (this.kind == 1) {
+        output = "<${this.tag}>"
+        var index = 0
+        while (index < this.children.size) {
+            output = "$output${this.children[index].microRender()}"
+            index = index + 1
+        }
+        output = "$output</${this.tag}>"
+    }
+    output
+}
+
+fun microHtmlResponse(status: int, view: Html): MicroResponse =
+    MicroResponse(
+        status,
+        [
+            MicroHeader("content-type", "text/html; charset=utf-8"),
+            MicroHeader("cache-control", "no-store"),
+            MicroHeader("vary", "cookie")
+        ],
+        "<!doctype html>${view.microRender()}"
+    )
+
+// The only guest import is a bounded JSON operation. The runner derives the
+// project, environment, and current app user; application arguments can never
+// select another tenant.
+trusted fun microPlatformCall(request: Json): MicroPlatformResponse {
+    val encoded = jsonStringify(request)
+    val capacity = 65536
+    val output = __ablaRuntimeAllocate(capacity + 1)
+    val length = micro_platform_call(
+        nativeCStringAddress(encoded),
+        encoded.size,
+        output,
+        capacity
+    )
+    if (length >= 0 && length <= capacity) {
+        ablaRuntimeStoreU8(output + length, 0)
+        MicroPlatformResponse(true, adoptNativeString(output, length))
+    } else MicroPlatformResponse(
+        false,
+        "{\"ok\":false,\"error\":{\"code\":\"host_call_failed\",\"message\":\"platform call failed\"}}"
+    )
+}
+
+fun microDataGet(
+    collection: string,
+    key: string,
+    scope: string = "project"
+): MicroPlatformResponse = microPlatformCall(jsonObject(
+    ["operation", "collection", "key", "scope"],
+    [jsonString("data.get"), jsonString(collection), jsonString(key), jsonString(scope)]
+))
+
+fun microDataPut(
+    collection: string,
+    key: string,
+    value: Json,
+    scope: string = "project",
+    expectedVersion: int = -1
+): MicroPlatformResponse {
+    val names = ["operation", "collection", "key", "scope", "value"]
+    val values = [
+        jsonString("data.put"),
+        jsonString(collection),
+        jsonString(key),
+        jsonString(scope),
+        value
+    ]
+    if (expectedVersion >= 0) {
+        names.append("expected_version")
+        values.append(jsonInteger(expectedVersion))
+    }
+    return microPlatformCall(jsonObject(names, values))
+}
+
+fun microPurchases(): MicroPlatformResponse = microPlatformCall(jsonObject(
+    ["operation"], [jsonString("purchase.list")]
+))
+
+fun microHasEntitlement(entitlement: string): MicroPlatformResponse =
+    microPlatformCall(jsonObject(
+        ["operation", "entitlement"],
+        [jsonString("purchase.has_entitlement"), jsonString(entitlement)]
+    ))
+
+// Recipient authority never enters guest memory: the runner resolves the
+// authenticated, verified app user and applies per-user/project quotas.
+fun microEmailCurrentUser(
+    subject: string,
+    message: string
+): MicroPlatformResponse = microPlatformCall(jsonObject(
+    ["operation", "subject", "message"],
+    [jsonString("email.send_to_current_user"), jsonString(subject), jsonString(message)]
+))

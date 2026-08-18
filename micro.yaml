@@ -1,0 +1,11 @@
+slug: stillroom-presets
+
+products:
+  - id: preset-pack
+    name: Quiet Light preset collection
+    description: Twelve Lightroom presets and a practical field guide.
+    price: 1900
+    currency: EUR
+    type: one_time
+    entitlement: preset-files
+    mode: test

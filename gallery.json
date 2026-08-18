@@ -1,0 +1,10 @@
+{
+  "schema": "micro.gallery-candidate.v1",
+  "id": "digital-product",
+  "title": "Digital product storefront",
+  "summary": "Sell a focused download with app authentication, checkout, purchase events, protected delivery, and scheduled maintenance.",
+  "category": "commerce",
+  "creator": "Micro Examples",
+  "license": "MIT",
+  "terms_version": "micro.gallery.v1"
+}

@@ -1,0 +1,118 @@
+import "abla/build"
+import "abla/crypto"
+import "abla/json"
+import "abla/text"
+import "abla/unsafe/memory"
+import "handler.ab"
+import "micro.ab"
+
+// Low-level core-WASM adapter. Application code belongs in handler.ab.
+@export("micro_alloc")
+trusted fun allocateRequest(length: u32): u32 = allocateRequestValue(length)
+
+trusted fun allocateRequestValue(length: int): int {
+    var pointer = 0
+    if (length >= 0 && length <= 65536) {
+        pointer = __ablaRuntimeAllocate(length + 1)
+        ablaRuntimeStoreU8(pointer + length, 0)
+    }
+    pointer
+}
+
+trusted fun readRequest(pointer: int, length: int): string {
+    if (pointer > 0 && length >= 0 && length <= 65536) {
+        adoptNativeString(pointer, length)
+    } else ""
+}
+
+// The host reads the response synchronously before this invocation returns, so
+// it can borrow the encoded string directly from linear memory.
+trusted fun writeResponse(response: string): int =
+    (nativeCStringAddress(response) << 32) | response.size
+
+class MicroWireRequest(val request: MicroRequest, val succeeded: bool)
+
+// The adapter uses Abla's forward-only JSON reader: known scalar fields are
+// decoded once, headers remain a validated source slice until requested, and
+// no dynamic JSON object tree is allocated.
+fun decodeWireRequest(source: string): MicroWireRequest {
+    val reader = jsonObjectReader(
+        source, JsonLimits(65536, 8, 256, 65536, 256, true)
+    )
+    reader.nextExpectedRaw("method")
+    val method = reader.readString()
+    reader.nextExpectedRaw("path")
+    val path = reader.readString()
+    reader.nextExpectedRaw("query")
+    val query = reader.readString()
+    reader.nextExpectedRaw("headers")
+    val headers = reader.readStringPairsRaw()
+    reader.nextExpectedRaw("body_base64")
+    val body = reader.readString()
+    reader.nextExpectedRaw("context")
+    val contextSource = reader.readRaw()
+    val succeeded = reader.finish()
+    val contextJson = jsonParse(contextSource)
+    val context = if (contextJson.succeeded && contextJson.value.isObject())
+        contextJson.value else jsonNull()
+    val userJson = context.get("user")
+    val user = if (userJson.isObject()) MicroAppUser(
+        true,
+        userJson.getString("id"),
+        userJson.getString("email"),
+        userJson.getString("display_name"),
+        userJson.get("email_verified").asBoolean()
+    ) else microAnonymousUser()
+    MicroWireRequest(
+        MicroRequest(
+            method,
+            path,
+            query,
+            MicroHeaders(headers),
+            if (succeeded) base64Decode(body) else "",
+            MicroRequestContext(
+                context.getString("project_id"),
+                context.getString("environment"),
+                user
+            )
+        ),
+        succeeded && contextJson.succeeded && context.isObject()
+    )
+}
+
+fun encodeHeaders(var encoded: JsonEncoder, headers: array<MicroHeader>): void {
+    encoded.beginArray()
+    var index = 0
+    while (index < headers.size) {
+        encoded.beginArray()
+        encoded.string(headers[index].name)
+        encoded.string(headers[index].value)
+        encoded.endArray()
+        index = index + 1
+    }
+    encoded.endArray()
+}
+
+fun encodeResponse(response: MicroResponse): string {
+    val encoded = jsonEncoder()
+    encoded.beginObject()
+    encoded.key("status")
+    encoded.integer(response.status)
+    encoded.key("headers")
+    encodeHeaders(encoded, response.headers)
+    encoded.key("body_base64")
+    encoded.string(base64Encode(response.body))
+    encoded.endObject()
+    encoded.finish()
+}
+
+@export("micro_handle")
+trusted fun dispatch(pointer: u32, length: u32): int =
+    dispatchValue(pointer, length)
+
+trusted fun dispatchValue(pointer: int, length: int): int {
+    val wire = decodeWireRequest(readRequest(pointer, length))
+    val response = if (wire.succeeded) handle(wire.request)
+        else microTextResponse(400, "invalid request\n")
+    writeResponse(encodeResponse(response))
+}

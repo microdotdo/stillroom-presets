@@ -1,0 +1,121 @@
+import "micro.ab"
+
+fun libraryPage(request: MicroRequest): Html {
+    val user = request.context.user
+    if (user.authenticated) {
+        val identity = if (user.displayName != "") user.displayName else user.email
+        return $html <html><head><title>Stillroom library</title></head><body><main><p>STILLROOM · YOUR LIBRARY</p><h1>Welcome, {identity}.</h1><p>This page was rendered inside the project Wasm with the authenticated user context supplied by Micro.</p><p>Your account is {user.email}. Purchases and protected downloads remain authoritative server-side.</p><p>Return to the Stillroom home page to view purchases or download your files.</p></main></body></html>
+    }
+    $html <html><head><title>Stillroom library</title></head><body><main><p>STILLROOM · YOUR LIBRARY</p><h1>Sign in to open your library.</h1><p>This response was rendered by the project Wasm. Return to the Stillroom home page and use the account button to sign in.</p></main></body></html>
+}
+
+fun microEventRecorded(collection: string, eventId: string, event: Json): bool {
+    val inserted = microDataPut(
+        collection,
+        eventId,
+        event,
+        "project",
+        0
+    )
+    val insertBody = if (inserted.succeeded)
+        jsonParse(inserted.body) else jsonParse("")
+    if (insertBody.succeeded && insertBody.value.get("ok").asBoolean()) {
+        return true
+    }
+
+    // Deliveries are at least once. A create-only conflict means this stable
+    // event was already applied, so a retry is successful without
+    // incrementing or replacing the record.
+    val existing = microDataGet(collection, eventId)
+    val existingBody = if (existing.succeeded)
+        jsonParse(existing.body) else jsonParse("")
+    existingBody.succeeded && existingBody.value.get("ok").asBoolean()
+}
+
+fun handle(request: MicroRequest): MicroResponse {
+    if (request.method == "GET" && request.path == "/library") {
+        return microHtmlResponse(200, libraryPage(request))
+    }
+    if (request.method == "POST" && request.path == "/email-library") {
+        if (!request.context.user.authenticated ||
+            !request.context.user.emailVerified) {
+            return microJsonResponse(401, #$jsons {
+                "ok": false,
+                "error": "verified_account_required"
+            })
+        }
+        val entitlement = microHasEntitlement("preset-files")
+        val entitlementBody = if (entitlement.succeeded)
+            jsonParse(entitlement.body) else jsonParse("")
+        if (!entitlementBody.succeeded ||
+            !entitlementBody.value.get("entitled").asBoolean()) {
+            return microJsonResponse(403, #$jsons {
+                "ok": false,
+                "error": "purchase_required"
+            })
+        }
+        val queued = microEmailCurrentUser(
+            "Your Quiet Light library",
+            "Your preset collection is ready. Sign in to Stillroom and use Download Quiet Light whenever you need a fresh copy."
+        )
+        val queuedBody = if (queued.succeeded)
+            jsonParse(queued.body) else jsonParse("")
+        return if (queuedBody.succeeded &&
+            queuedBody.value.get("ok").asBoolean())
+            microJsonResponse(202, queued.body)
+        else microJsonResponse(429, if (queued.succeeded) queued.body else #$jsons {
+            "ok": false,
+            "error": "email_queue_failed"
+        })
+    }
+    if (request.method == "POST" &&
+        request.path == "/_micro/events/purchase.completed") {
+        val event = jsonParse(request.body)
+        val purchaseId = if (event.succeeded && event.value.isObject())
+            event.value.getString("purchase_id") else ""
+        val appUserId = if (event.succeeded && event.value.isObject())
+            event.value.getString("app_user_id") else ""
+        val productId = if (event.succeeded && event.value.isObject())
+            event.value.getString("product_id") else ""
+        val quantity = if (event.succeeded && event.value.isObject())
+            event.value.getInt("quantity") else 0
+        if (purchaseId == "" || appUserId == "" ||
+            productId != "preset-pack" || quantity < 1) {
+            return microJsonResponse(400, #$jsons {
+                "ok": false,
+                "error": "invalid_purchase_event"
+            })
+        }
+        return if (microEventRecorded("purchase-events", purchaseId, event.value))
+            MicroResponse(204, [], "")
+        else microJsonResponse(503, #$jsons {
+            "ok": false,
+            "error": "event_storage_failed"
+        })
+    }
+    if (request.method == "POST" &&
+        request.path == "/_micro/events/schedule.triggered") {
+        val event = jsonParse(request.body)
+        val eventId = request.headers.get("x-micro-event-id")
+        val schedule = if (event.succeeded && event.value.isObject())
+            event.value.getString("schedule") else ""
+        val scheduledAt = if (event.succeeded && event.value.isObject())
+            event.value.getString("scheduled_at") else ""
+        val payload = if (event.succeeded && event.value.isObject())
+            event.value.get("payload") else jsonNull()
+        if (eventId == "" || schedule != "catalog-refresh" ||
+            scheduledAt == "" || !payload.isObject()) {
+            return microJsonResponse(400, #$jsons {
+                "ok": false,
+                "error": "invalid_schedule_event"
+            })
+        }
+        return if (microEventRecorded("schedule-events", eventId, event.value))
+            MicroResponse(204, [], "")
+        else microJsonResponse(503, #$jsons {
+            "ok": false,
+            "error": "event_storage_failed"
+        })
+    }
+    microTextResponse(404, "not found\n")
+}

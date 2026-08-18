@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="A reviewed Micro digital-product storefront example.">
+    <meta name="theme-color" content="#f4efe5">
+    <title>Stillroom — Lightroom presets for quiet color</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to product</a>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Stillroom home">STILLROOM <span>01</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#lookbook">Lookbook</a>
+        <a href="#details">Details</a>
+        <a href="/library">Server-rendered library</a>
+        <button id="micro-login-button" class="text-button" type="button">Login with Micro</button>
+        <button id="account-button" class="text-button" type="button">Sign in</button>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">THE QUIET LIGHT COLLECTION · VOL. 01</p>
+          <h1 id="hero-title">Color that feels<br>like a memory.</h1>
+          <p class="lede">Twelve Lightroom presets shaped for soft daylight, honest skin, and the shadows you meant to keep.</p>
+          <div class="hero-actions">
+            <button id="buy-button" class="primary-button" type="button">Get the collection — €19</button>
+            <button id="download-button" class="secondary-button hidden" type="button">Download your files</button>
+          </div>
+          <p id="product-status" class="status" role="status" aria-live="polite">One payment. Instant access. Yours to keep.</p>
+        </div>
+        <div class="cover" aria-label="Abstract warm color study">
+          <span class="cover-index">01 / 12</span>
+          <div class="sun"></div>
+          <div class="horizon"></div>
+          <strong>QUIET<br>LIGHT</strong>
+          <small>PRESET COLLECTION</small>
+        </div>
+      </section>
+
+      <section id="lookbook" class="lookbook" aria-labelledby="lookbook-title">
+        <header>
+          <p class="eyebrow">THE PALETTE</p>
+          <h2 id="lookbook-title">Twelve starting points.<br>None of them a shortcut.</h2>
+        </header>
+        <div class="swatches">
+          <article class="swatch ochre"><span>01</span><h3>After Sun</h3><p>Warm highlights, open shadows.</p></article>
+          <article class="swatch sage"><span>05</span><h3>Field Note</h3><p>Greens with the volume turned down.</p></article>
+          <article class="swatch blue"><span>09</span><h3>Blue Hour</h3><p>Cool air without cold skin.</p></article>
+        </div>
+      </section>
+
+      <section id="details" class="details" aria-labelledby="details-title">
+        <div>
+          <p class="eyebrow">WHAT ARRIVES</p>
+          <h2 id="details-title">A small, useful kit.</h2>
+        </div>
+        <dl>
+          <div><dt>12</dt><dd>XMP presets for Lightroom and Camera Raw</dd></div>
+          <div><dt>01</dt><dd>Field guide for exposure and white balance</dd></div>
+          <div><dt>∞</dt><dd>Personal and commercial projects</dd></div>
+        </dl>
+      </section>
+
+      <section id="account-panel" class="account-panel hidden" aria-labelledby="account-title">
+        <p class="eyebrow">YOUR LIBRARY</p>
+        <h2 id="account-title">Welcome back.</h2>
+        <p id="account-copy"></p>
+        <div><button id="account-download" class="primary-button hidden" type="button">Download Quiet Light</button><button id="account-email" class="text-button hidden" type="button">Email library reminder</button><button id="sign-out-button" class="text-button" type="button">Sign out</button></div>
+      </section>
+    </main>
+
+    <footer><span>STILLROOM</span><p>A reviewed digital-product example running on Micro.</p><a href="https://micro.do" rel="noreferrer">Built with micro.do ↗</a></footer>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+name: Deploy Micro
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: microdotdo/micro-action@58328ef92784e3975b134abbcde0d7ed1422bc2c # v1.2.0
