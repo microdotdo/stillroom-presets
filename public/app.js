@@ -38,7 +38,7 @@
         buyButton.disabled = false;
         return;
       }
-      accountCopy.textContent = `${currentUser.email} · Purchases and downloads are verified by Micro.`;
+      accountCopy.textContent = `${currentUser.email} · Your copy of Quiet Light lives here.`;
       const ledger = await Micro.purchases();
       ownsProduct = (ledger.purchases || []).some(purchaseIsActive);
       downloadButton.classList.toggle("hidden", !ownsProduct);
