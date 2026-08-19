@@ -14,4 +14,4 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: microdotdo/micro-action@3de4aa89c98cd00bdb1c4dd978e24b7e9354aefe # v1.3.0
+      - uses: microdotdo/micro-action@2ce0ceaa16a0fef8344c2b6ec114d64b20c7f417 # v1.4.0
